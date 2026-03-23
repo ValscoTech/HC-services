@@ -70,6 +70,17 @@ async function fetchPartyNameSearch({
     timeout: 30000,
   });
 
+  const responsePreview =
+    typeof response.data === "string"
+      ? response.data.substring(0, 500)
+      : JSON.stringify(response.data).substring(0, 500);
+  console.log("[HC Party Name] Portal response debug:", {
+    status: response.status,
+    contentType: response.headers["content-type"],
+    dataType: typeof response.data,
+    preview: responsePreview,
+  });
+
   const govData = parsePortalShowRecordsResponse(response.data);
 
   const newSetCookieHeaders = response.headers["set-cookie"];
@@ -84,7 +95,6 @@ async function fetchPartyNameSearch({
     },
     cookies: updatedCookiesForFrontend,
     raw: response.data,
-    response,
   };
 }
 

@@ -9,7 +9,7 @@ async function getPartyNameSearch(req, res) {
     captcha,
     petres_name,
     rgyear,
-    caseStatusSearchType,
+    caseStatusSearchType: rawCaseStatusSearchType,
     f,
     court_code,
     state_code,
@@ -17,6 +17,10 @@ async function getPartyNameSearch(req, res) {
     cookies: frontendCookiesObject,
     sessionId: frontendSessionId,
   } = req.body;
+  const caseStatusSearchType =
+    rawCaseStatusSearchType === "CSPartyName"
+      ? "CSpartyName"
+      : rawCaseStatusSearchType;
 
   const cookieHeaderStringForExternalRequest = Object.entries(
     frontendCookiesObject || {},

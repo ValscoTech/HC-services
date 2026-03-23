@@ -17,8 +17,12 @@ const SQL_ERROR_PATTERNS = [
 ];
 
 function normalizePortalText(rawData) {
-  if (typeof rawData !== "string") {
+  if (rawData === null || rawData === undefined) {
     return "";
+  }
+
+  if (typeof rawData !== "string") {
+    return null;
   }
 
   return rawData.replace(/\s+/g, " ").trim();
@@ -34,15 +38,20 @@ function detectPortalLookupIssue(
   { portalErrorMessage = DEFAULT_PORTAL_ERROR_MESSAGE } = {},
 ) {
   const normalizedText = normalizePortalText(rawData);
-  const lowerText = normalizedText.toLowerCase();
 
-  if (!normalizedText) {
+  if (normalizedText === "") {
     return createPortalLookupError(portalErrorMessage, {
       code: "HC_PORTAL_EMPTY_RESPONSE",
       statusCode: 502,
       raw: rawData,
     });
   }
+
+  if (normalizedText === null) {
+    return null;
+  }
+
+  const lowerText = normalizedText.toLowerCase();
 
   if (lowerText === "invalid captcha") {
     return createPortalLookupError("Invalid captcha provided for HC services portal", {

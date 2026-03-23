@@ -6,15 +6,20 @@ async function getHighCourtCaseDetails(req, res) {
   console.log(`[${timestamp}] Handling High Court Case Details request.`);
 
   const {
-    hcservices_sessid,
-    jsession_value,
+    hcservices_sessid: rawHcservicesSessid,
+    jsession_value: rawJsessionValue,
     court_code,
     state_code,
     court_complex_code,
     case_no,
     cino,
     appFlag = "",
+    cookies,
   } = req.body;
+  const hcservices_sessid =
+    rawHcservicesSessid || cookies?.HCSERVICES_SESSID || null;
+  const jsession_value =
+    rawJsessionValue || cookies?.JSESSION || cookies?.JSESSIONID || null;
 
   if (
     !hcservices_sessid ||

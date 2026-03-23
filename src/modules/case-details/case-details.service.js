@@ -161,7 +161,6 @@ async function fetchHighCourtCaseDetails({
     data: parsedData,
     cookies: updatedCookiesForFrontend,
     raw: html,
-    response,
   };
 }
 
