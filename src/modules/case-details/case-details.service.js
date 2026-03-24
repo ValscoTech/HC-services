@@ -1,6 +1,8 @@
 const axios = require("axios");
 const querystring = require("querystring");
 const cheerio = require("cheerio");
+
+const HC_SERVICES_BASE_URL = "https://hcservices.ecourts.gov.in/hcservices/";
 const {
   parseSetCookieHeaders,
   getSessionIdFromCookies,
@@ -8,6 +10,138 @@ const {
 const {
   assertPortalCaseDetailsPresent,
 } = require("../../shared/utils/portal-response.util");
+
+function normalizeRegistrationNumber(value) {
+  if (!value || typeof value !== "string") {
+    return "";
+  }
+
+  return value.replace(/\s+/g, "");
+}
+
+function buildOrderLink(rawHref, {
+  orderOn,
+  registrationNumber,
+  cino,
+  state_code,
+  court_code,
+  appFlag,
+}) {
+  if (!rawHref) {
+    return null;
+  }
+
+  const resolvedUrl = new URL(rawHref, HC_SERVICES_BASE_URL);
+  const filename = resolvedUrl.searchParams.get("filename");
+  const caseno =
+    orderOn ||
+    normalizeRegistrationNumber(registrationNumber) ||
+    resolvedUrl.searchParams.get("caseno") ||
+    "";
+
+  resolvedUrl.pathname = "/hcservices/cases/display_pdf.php";
+  resolvedUrl.search = "";
+
+  if (filename) resolvedUrl.searchParams.set("filename", filename);
+  resolvedUrl.searchParams.set("caseno", caseno);
+  resolvedUrl.searchParams.set("cCode", court_code);
+  resolvedUrl.searchParams.set("cino", cino);
+  resolvedUrl.searchParams.set("state_code", state_code);
+  resolvedUrl.searchParams.set("court_code", court_code);
+  resolvedUrl.searchParams.set("appFlag", appFlag);
+
+  return resolvedUrl.toString();
+}
+
+function buildCaseCookieHeader(hcservices_sessid, jsession_value) {
+  return `HCSERVICES_SESSID=${hcservices_sessid}; JSESSION=${jsession_value}`;
+}
+
+function getCaseRequestHeaders(cookieHeaderString) {
+  return {
+    Accept: "*/*",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    Cookie: cookieHeaderString,
+    Origin: "https://hcservices.ecourts.gov.in",
+    Priority: "u=1, i",
+    Referer: "https://hcservices.ecourts.gov.in/",
+    "Sec-Ch-Ua": '"Chromium";v="136", "Brave";v="136", "Not.A/Brand";v="99"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Gpc": "1",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+    "X-Requested-With": "XMLHttpRequest",
+  };
+}
+
+async function fetchHighCourtOrderPdf({
+  hcservices_sessid,
+  jsession_value,
+  orderLink,
+}) {
+  const resolvedUrl = new URL(orderLink);
+  if (
+    resolvedUrl.origin !== "https://hcservices.ecourts.gov.in" ||
+    !resolvedUrl.pathname.startsWith("/hcservices/cases/display_pdf.php")
+  ) {
+    throw new Error("Invalid HC order link");
+  }
+
+  const cookieHeaderString = buildCaseCookieHeader(
+    hcservices_sessid,
+    jsession_value,
+  );
+  const response = await axios.get(resolvedUrl.toString(), {
+    responseType: "arraybuffer",
+    headers: {
+      ...getCaseRequestHeaders(cookieHeaderString),
+      Accept: "application/pdf,*/*",
+      Referer: "https://hcservices.ecourts.gov.in/",
+    },
+    timeout: 20000,
+    validateStatus: (status) => status >= 200 && status < 400,
+  });
+
+  const responseBuffer = Buffer.from(response.data);
+  const responseContentType = response.headers["content-type"] || "";
+  const isPdf =
+    responseContentType.toLowerCase().includes("application/pdf") ||
+    responseBuffer.subarray(0, 4).toString() === "%PDF";
+
+  const newSetCookieHeaders = response.headers["set-cookie"];
+  const updatedCookiesForFrontend = parseSetCookieHeaders(newSetCookieHeaders);
+  const finalSessionId =
+    getSessionIdFromCookies(updatedCookiesForFrontend) ||
+    jsession_value ||
+    hcservices_sessid;
+
+  if (!isPdf) {
+    const responseText = responseBuffer.toString("utf8");
+
+    return {
+      ok: false,
+      sessionID: finalSessionId,
+      cookies: updatedCookiesForFrontend,
+      status: response.status,
+      contentType: responseContentType,
+      preview: responseText.substring(0, 500),
+    };
+  }
+
+  return {
+    ok: true,
+    sessionID: finalSessionId,
+    cookies: updatedCookiesForFrontend,
+    status: response.status,
+    contentType: responseContentType || "application/pdf",
+    data: responseBuffer,
+  };
+}
 
 async function fetchHighCourtCaseDetails({
   hcservices_sessid,
@@ -31,26 +165,13 @@ async function fetchHighCourtCaseDetails({
     appFlag: appFlag,
   });
 
-  const cookieHeaderString = `HCSERVICES_SESSID=${hcservices_sessid}; JSESSION=${jsession_value}`;
+  const cookieHeaderString = buildCaseCookieHeader(
+    hcservices_sessid,
+    jsession_value,
+  );
 
   const headers = {
-    Accept: "*/*",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-    Cookie: cookieHeaderString,
-    Origin: "https://hcservices.ecourts.gov.in",
-    Priority: "u=1, i",
-    Referer: "https://hcservices.ecourts.gov.in/",
-    "Sec-Ch-Ua": '"Chromium";v="136", "Brave";v="136", "Not.A/Brand";v="99"',
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"Windows"',
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-origin",
-    "Sec-Gpc": "1",
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-    "X-Requested-With": "XMLHttpRequest",
+    ...getCaseRequestHeaders(cookieHeaderString),
     "Content-Length": Buffer.byteLength(payload).toString(),
   };
 
@@ -127,15 +248,21 @@ async function fetchHighCourtCaseDetails({
     if (i === 0) return;
     const tds = $(row).find("td");
     if (tds.length >= 5) {
+      const orderOn = $(tds[1]).text().trim();
+      const rawOrderHref = $(tds[4]).find("a").attr("href");
       orders.push({
         orderNumber: $(tds[0]).text().trim(),
-        orderOn: $(tds[1]).text().trim(),
+        orderOn,
         judge: $(tds[2]).text().trim(),
         orderDate: $(tds[3]).text().trim(),
-        orderLink: $(tds[4]).find("a").attr("href")
-          ? "https://hcservices.ecourts.gov.in/hcservices/orders/" +
-            $(tds[4]).find("a").attr("href")
-          : null,
+        orderLink: buildOrderLink(rawOrderHref, {
+          orderOn,
+          registrationNumber: caseDetails["Registration Number"],
+          cino,
+          state_code,
+          court_code,
+          appFlag,
+        }),
       });
     }
   });
@@ -166,4 +293,5 @@ async function fetchHighCourtCaseDetails({
 
 module.exports = {
   fetchHighCourtCaseDetails,
+  fetchHighCourtOrderPdf,
 };
