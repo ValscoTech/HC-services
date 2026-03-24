@@ -1,6 +1,7 @@
-const DEFAULT_PORTAL_ERROR_MESSAGE = "Error in the HC service portal";
+const DEFAULT_PORTAL_ERROR_MESSAGE =
+  "No valid case details were returned by the HC portal";
 const DEFAULT_NO_CASE_DETAILS_MESSAGE =
-  "No case details found in the HC service portal";
+  "No valid case details were returned by the HC portal";
 
 class PortalLookupError extends Error {
   constructor(
