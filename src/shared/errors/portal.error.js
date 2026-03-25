@@ -1,7 +1,7 @@
 const DEFAULT_PORTAL_ERROR_MESSAGE =
-  "No valid case details were returned by the HC portal";
+  "No valid case details were returned by the HC portal. Please try later";
 const DEFAULT_NO_CASE_DETAILS_MESSAGE =
-  "No valid case details were returned by the HC portal";
+  "No valid case details were returned by the HC portal. Please try later";
 
 class PortalLookupError extends Error {
   constructor(

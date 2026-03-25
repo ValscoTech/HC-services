@@ -170,8 +170,7 @@ async function getHighCourtOrderPdf(req, res) {
 
     if (!result.ok) {
       return res.status(502).json({
-        error: "Failed to fetch HC order PDF",
-        details: "HC portal returned a non-PDF response",
+        error: "No order PDF uploaded in the HC portal. Please try later",
         contentType: result.contentType,
         preview: result.preview,
         cookies: result.cookies,

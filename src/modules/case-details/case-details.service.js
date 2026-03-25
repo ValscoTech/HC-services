@@ -11,6 +11,20 @@ const {
   assertPortalCaseDetailsPresent,
 } = require("../../shared/utils/portal-response.util");
 
+function parseHtmlLineBlock($element) {
+  const rawHtml = $element.html();
+  if (!rawHtml) {
+    return [];
+  }
+
+  return rawHtml
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/&nbsp;/gi, " ")
+    .split("\n")
+    .map((line) => cheerio.load(`<div>${line}</div>`)("div").text().replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
 function normalizeRegistrationNumber(value) {
   if (!value || typeof value !== "string") {
     return "";
@@ -195,9 +209,13 @@ async function fetchHighCourtCaseDetails({
   $caseDetailsTable.find("tr").each((i, row) => {
     const tds = $(row).find("td");
     if (tds.length >= 2) {
-      const key = $(tds[0]).text().trim().replace(":", "");
-      const value = $(tds[1]).text().trim();
-      caseDetails[key] = value;
+      for (let index = 0; index < tds.length - 1; index += 2) {
+        const key = $(tds[index]).text().trim().replace(":", "");
+        const value = $(tds[index + 1]).text().trim();
+        if (key) {
+          caseDetails[key] = value;
+        }
+      }
     }
   });
 
@@ -212,19 +230,22 @@ async function fetchHighCourtCaseDetails({
     }
   });
 
-  const petitionerAdvocate = $(".Petitioner_Advocate_table")
-    .text()
-    .trim()
-    .split("\n")
-    .map((x) => x.trim())
-    .filter(Boolean);
+  const petitionerAdvocate = parseHtmlLineBlock($(".Petitioner_Advocate_table"));
 
-  const respondentAdvocate = $(".Respondent_Advocate_table")
-    .text()
-    .trim()
-    .split("\n")
-    .map((x) => x.trim())
-    .filter(Boolean);
+  const respondentAdvocate = parseHtmlLineBlock($(".Respondent_Advocate_table"));
+
+  const categoryDetails = {};
+  const $categoryDetailsTable = $("#subject_table");
+  $categoryDetailsTable.find("tr").each((i, row) => {
+    const tds = $(row).find("td");
+    if (tds.length >= 2) {
+      const key = $(tds[0]).text().trim().replace(":", "");
+      const value = $(tds[1]).text().trim();
+      if (key) {
+        categoryDetails[key] = value;
+      }
+    }
+  });
 
   const hearingHistory = [];
   const $hearingTable = $(".history_table");
@@ -279,6 +300,7 @@ async function fetchHighCourtCaseDetails({
     caseStatus,
     petitionerAdvocate,
     respondentAdvocate,
+    categoryDetails,
     hearingHistory,
     orders,
   };
