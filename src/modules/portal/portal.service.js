@@ -1,7 +1,6 @@
 const axios = require("axios");
 const querystring = require("querystring");
 const { agent } = require("../../config/http");
-const { benchesSession } = require("../../config/env");
 const {
   parseSetCookieHeaders,
   getSessionIdFromCookies,
@@ -19,6 +18,13 @@ async function fetchHighCourtBenches({ state_code, appFlag = "web" }) {
   const targetUrl =
     "https://hcservices.ecourts.gov.in/hcservices/cases_qry/index_qry.php";
 
+  const captchaSession = await fetchHighCourtCaptcha();
+  const cookieHeaderStringForExternalRequest = Object.entries(
+    captchaSession.cookies || {},
+  )
+    .map(([key, value]) => `${key}=${value}`)
+    .join("; ");
+
   const payload = querystring.stringify({
     action_code: "fillHCBench",
     state_code: state_code,
@@ -29,7 +35,7 @@ async function fetchHighCourtBenches({ state_code, appFlag = "web" }) {
     Accept: "*/*",
     "Accept-Language": "en-US,en;q=0.5",
     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-    Cookie: `HCSERVICES_SESSID=${benchesSession.hcservicesSessid}; JSESSION=${benchesSession.jsession}`,
+    Cookie: cookieHeaderStringForExternalRequest,
     Origin: "https://hcservices.ecourts.gov.in",
     Priority: "u=1, i",
     Referer: "https://hcservices.ecourts.gov.in/",
@@ -85,7 +91,25 @@ async function fetchHighCourtBenches({ state_code, appFlag = "web" }) {
     });
   }
 
-  return { benches, raw: responseData, response };
+  const newSetCookieHeaders = response.headers["set-cookie"];
+  const updatedCookiesForFrontend = parseSetCookieHeaders(newSetCookieHeaders);
+  const mergedCookies = {
+    ...(captchaSession.cookies || {}),
+    ...(updatedCookiesForFrontend || {}),
+  };
+  const sessionID =
+    getSessionIdFromCookies(updatedCookiesForFrontend) ||
+    getSessionIdFromCookies(captchaSession.cookies) ||
+    captchaSession.sessionId ||
+    null;
+
+  return {
+    benches,
+    cookies: mergedCookies,
+    sessionID,
+    raw: responseData,
+    response,
+  };
 }
 
 async function fetchHighCourtCaptcha() {
