@@ -4,6 +4,8 @@ const {
   createPortalLookupError,
 } = require("../errors/portal.error");
 
+const DEFAULT_SERVER_DOWN_MESSAGE = "Server down . Please try again later";
+
 const SQL_ERROR_PATTERNS = [
   "sql",
   "syntax error",
@@ -66,7 +68,12 @@ function detectPortalLookupIssue(
     lowerText.includes("record not found") ||
     hasPortalSqlError(rawData)
   ) {
-    return createPortalLookupError(portalErrorMessage, {
+    const serverErrorMessage =
+      lowerText === "there is an error" || hasPortalSqlError(rawData)
+        ? DEFAULT_SERVER_DOWN_MESSAGE
+        : portalErrorMessage;
+
+    return createPortalLookupError(serverErrorMessage, {
       code: "HC_PORTAL_INVALID_RESPONSE",
       statusCode: 502,
       raw: rawData,
@@ -185,6 +192,7 @@ function assertPortalCaseDetailsPresent(
 }
 
 module.exports = {
+  DEFAULT_SERVER_DOWN_MESSAGE,
   detectPortalLookupIssue,
   parsePortalShowRecordsResponse,
   assertPortalCaseDetailsPresent,
