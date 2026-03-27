@@ -14,7 +14,63 @@ const {
   detectPortalLookupIssue,
 } = require("../../../shared/utils/portal-response.util");
 
-async function fetchCnrNumberSearch({ cino, captcha, frontendCookiesObject }) {
+const HC_SERVICES_BASE_URL = "https://hcservices.ecourts.gov.in/hcservices/";
+
+function normalizeRegistrationNumber(value) {
+  if (!value || typeof value !== "string") {
+    return "";
+  }
+
+  return value.replace(/\s+/g, "");
+}
+
+function buildOrderLink(rawHref, {
+  orderOn,
+  registrationNumber,
+  cino,
+  court_code,
+  state_code,
+  appFlag,
+}) {
+  if (!rawHref) {
+    return null;
+  }
+
+  const resolvedUrl = new URL(rawHref, HC_SERVICES_BASE_URL);
+  const filename = resolvedUrl.searchParams.get("filename");
+  const caseno =
+    orderOn ||
+    normalizeRegistrationNumber(registrationNumber) ||
+    resolvedUrl.searchParams.get("caseno") ||
+    "";
+  const resolvedCourtCode = court_code || resolvedUrl.searchParams.get("cCode") || resolvedUrl.searchParams.get("court_code") || "";
+  const resolvedStateCode = state_code || resolvedUrl.searchParams.get("state_code") || "";
+  const resolvedCino = cino || resolvedUrl.searchParams.get("cino") || "";
+  const resolvedAppFlag = appFlag || resolvedUrl.searchParams.get("appFlag") || "";
+
+  resolvedUrl.pathname = "/hcservices/cases/display_pdf.php";
+  resolvedUrl.search = "";
+
+  if (filename) resolvedUrl.searchParams.set("filename", filename);
+  resolvedUrl.searchParams.set("caseno", caseno);
+  if (resolvedCourtCode) {
+    resolvedUrl.searchParams.set("cCode", resolvedCourtCode);
+    resolvedUrl.searchParams.set("court_code", resolvedCourtCode);
+  }
+  if (resolvedCino) resolvedUrl.searchParams.set("cino", resolvedCino);
+  if (resolvedStateCode) resolvedUrl.searchParams.set("state_code", resolvedStateCode);
+  resolvedUrl.searchParams.set("appFlag", resolvedAppFlag);
+
+  return resolvedUrl.toString();
+}
+
+async function fetchCnrNumberSearch({
+  cino,
+  captcha,
+  caseStatusSearchType = "CNRNumber",
+  appFlag = "web",
+  frontendCookiesObject,
+}) {
   const targetUrl =
     "https://hcservices.ecourts.gov.in/hcservices/cases_qry/index_qry.php";
 
@@ -27,9 +83,9 @@ async function fetchCnrNumberSearch({ cino, captcha, frontendCookiesObject }) {
   const payload = querystring.stringify({
     captcha,
     cino: String(cino).toUpperCase(),
-    appFlag: "web",
+    appFlag,
     action_code: "fetchStateDistCourtNew",
-    caseStatusSearchType: "CNRNumber",
+    caseStatusSearchType,
   });
 
   const headers = {
@@ -61,12 +117,16 @@ async function fetchCnrNumberSearch({ cino, captcha, frontendCookiesObject }) {
   });
 
   const rawData = response.data;
-  const textData = typeof rawData === "string" ? rawData.trim() : "";
 
   const newSetCookieHeaders = response.headers["set-cookie"];
   const updatedCookiesForFrontend = parseSetCookieHeaders(newSetCookieHeaders);
+  const mergedCookiesForFrontend = {
+    ...(frontendCookiesObject || {}),
+    ...(updatedCookiesForFrontend || {}),
+  };
   const finalSessionId =
     getSessionIdFromCookies(updatedCookiesForFrontend) ||
+    getSessionIdFromCookies(frontendCookiesObject) ||
     frontendCookiesObject?.JSESSIONID ||
     frontendCookiesObject?.JSESSION ||
     frontendCookiesObject?.HCSERVICES_SESSID ||
@@ -78,7 +138,7 @@ async function fetchCnrNumberSearch({ cino, captcha, frontendCookiesObject }) {
   if (knownIssue) {
     return {
       sessionID: finalSessionId,
-      cookies: updatedCookiesForFrontend,
+      cookies: mergedCookiesForFrontend,
       status: "ERROR",
       message: knownIssue.message,
       code: knownIssue.code,
@@ -103,7 +163,7 @@ async function fetchCnrNumberSearch({ cino, captcha, frontendCookiesObject }) {
   } catch (error) {
     return {
       sessionID: finalSessionId,
-      cookies: updatedCookiesForFrontend,
+      cookies: mergedCookiesForFrontend,
       status: "ERROR",
       message: error.message,
       code: error.code,
@@ -173,22 +233,28 @@ async function fetchCnrNumberSearch({ cino, captcha, frontendCookiesObject }) {
       if (i === 0) return;
       const tds = $(row).find("td");
       if (tds.length >= 5) {
+        const orderOn = $(tds[1]).text().trim();
+        const rawOrderHref = $(tds[4]).find("a").attr("href");
         orders.push({
           orderNumber: $(tds[0]).text().trim(),
-          orderOn: $(tds[1]).text().trim(),
+          orderOn,
           judge: $(tds[2]).text().trim(),
           orderDate: $(tds[3]).text().trim(),
-          orderLink: $(tds[4]).find("a").attr("href")
-            ? "https://hcservices.ecourts.gov.in/hcservices/orders/" +
-              $(tds[4]).find("a").attr("href")
-            : null,
+          orderLink: buildOrderLink(rawOrderHref, {
+            orderOn,
+            registrationNumber: caseDetails["Registration Number"],
+            cino,
+            court_code: null,
+            state_code: null,
+            appFlag,
+          }),
         });
       }
     });
 
   return {
     sessionID: finalSessionId,
-    cookies: updatedCookiesForFrontend,
+    cookies: mergedCookiesForFrontend,
     status: "SUCCESS",
     data: {
       caseDetails,

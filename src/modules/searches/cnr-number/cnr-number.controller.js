@@ -1,10 +1,34 @@
 const { fetchCnrNumberSearch } = require("./cnr-number.service");
 
+function buildOrderPdfProxyUrl(req, {
+  orderLink,
+  hcservices_sessid,
+  jsession_value,
+}) {
+  if (!orderLink || !hcservices_sessid || !jsession_value) {
+    return null;
+  }
+
+  const searchParams = new URLSearchParams({
+    orderLink,
+    hcservices_sessid,
+    jsession_value,
+  });
+
+  return `/api/case/orders/highcourt/pdf?${searchParams.toString()}`;
+}
+
 async function getCnrNumberSearch(req, res) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] Handling CNR Number Search request.`);
 
-  const { cino, captcha, cookies: frontendCookiesObject } = req.body;
+  const {
+    cino,
+    captcha,
+    caseStatusSearchType: rawCaseStatusSearchType = "CNRNumber",
+    appFlag = "web",
+    cookies: frontendCookiesObject,
+  } = req.body;
 
   const cookieHeaderStringForExternalRequest = Object.entries(
     frontendCookiesObject || {},
@@ -24,6 +48,14 @@ async function getCnrNumberSearch(req, res) {
   }
 
   const normalizedCino = String(cino).trim().toUpperCase();
+  const caseStatusSearchType =
+    String(rawCaseStatusSearchType || "").trim() || "CNRNumber";
+
+  if (caseStatusSearchType !== "CNRNumber") {
+    return res.status(400).json({
+      error: "Invalid caseStatusSearchType. CNR search requires CNRNumber.",
+    });
+  }
 
   if (!/^[A-Z0-9]{16}$/.test(normalizedCino)) {
     return res.status(400).json({
@@ -32,14 +64,49 @@ async function getCnrNumberSearch(req, res) {
     });
   }
 
+  if (normalizedCino === "0000000000000000") {
+    return res.status(400).json({
+      error: "Invalid CNR number. Enter a valid non-zero CNR number.",
+    });
+  }
+
   try {
     const result = await fetchCnrNumberSearch({
       cino: normalizedCino,
       captcha,
+      caseStatusSearchType,
+      appFlag,
       frontendCookiesObject,
     });
 
-    res.json(result);
+    const responseHcservicesSessid =
+      result.cookies?.HCSERVICES_SESSID ||
+      frontendCookiesObject?.HCSERVICES_SESSID ||
+      null;
+    const responseJsessionValue =
+      result.cookies?.JSESSION ||
+      result.cookies?.JSESSIONID ||
+      frontendCookiesObject?.JSESSION ||
+      frontendCookiesObject?.JSESSIONID ||
+      null;
+    const ordersWithProxyUrl = (result.data?.orders || []).map((order) => ({
+      ...order,
+      pdfProxyUrl: buildOrderPdfProxyUrl(req, {
+        orderLink: order.orderLink,
+        hcservices_sessid: responseHcservicesSessid,
+        jsession_value: responseJsessionValue,
+      }),
+    }));
+
+    res.json({
+      ...result,
+      data: result.data
+        ? {
+            ...result.data,
+            orders: ordersWithProxyUrl,
+          }
+        : result.data,
+    });
   } catch (error) {
     const errorTimestamp = new Date().toISOString();
     console.error(
