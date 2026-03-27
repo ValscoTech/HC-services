@@ -6,15 +6,25 @@ async function getFilingNumberSearch(req, res) {
   console.log(`[${timestamp}] Handling Filing Number Search request.`);
 
   const {
-    court_code,
+    court_code: rawCourtCode,
     state_code,
-    court_complex_code,
+    court_complex_code: rawCourtComplexCode,
+    caseStatusSearchType: rawCaseStatusSearchType = "CSfilingNumber",
     captcha,
-    filing_no,
-    filyear,
-    filing_case_type = "",
+    case_no,
+    rgyear,
+    case_type = "",
     cookies: frontendCookiesObject,
   } = req.body;
+
+  const courtCodeNormalized = String(rawCourtCode || "").trim();
+  const caseStatusSearchType =
+    String(rawCaseStatusSearchType || "").trim() || "CSfilingNumber";
+  const derivedCourtComplexCode = courtCodeNormalized.includes("@")
+    ? courtCodeNormalized.split("@")[0].trim()
+    : "";
+  const courtComplexCodeNormalized =
+    String(rawCourtComplexCode || "").trim() || derivedCourtComplexCode;
 
   const cookieHeaderStringForExternalRequest = Object.entries(
     frontendCookiesObject || {},
@@ -23,21 +33,21 @@ async function getFilingNumberSearch(req, res) {
     .join("; ");
 
   if (
-    !court_code ||
+    !courtCodeNormalized ||
     !state_code ||
-    !court_complex_code ||
+    !courtComplexCodeNormalized ||
     !captcha ||
-    !filing_no ||
-    !filyear ||
+    !case_no ||
+    !rgyear ||
     !cookieHeaderStringForExternalRequest
   ) {
     const missingFields = [];
-    if (!court_code) missingFields.push("court_code");
+    if (!courtCodeNormalized) missingFields.push("court_code");
     if (!state_code) missingFields.push("state_code");
-    if (!court_complex_code) missingFields.push("court_complex_code");
+    if (!courtComplexCodeNormalized) missingFields.push("court_complex_code");
     if (!captcha) missingFields.push("captcha");
-    if (!filing_no) missingFields.push("filing_no");
-    if (!filyear) missingFields.push("filyear");
+    if (!case_no) missingFields.push("case_no");
+    if (!rgyear) missingFields.push("rgyear");
     if (!cookieHeaderStringForExternalRequest) missingFields.push("cookies");
 
     return res
@@ -45,31 +55,42 @@ async function getFilingNumberSearch(req, res) {
       .json({ error: `Missing required fields: ${missingFields.join(", ")}` });
   }
 
-  const filingNoNormalized = String(filing_no).trim();
-  const filingYearNormalized = String(filyear).trim();
-
-  if (!/^\d{1,7}$/.test(filingNoNormalized)) {
+  if (
+    caseStatusSearchType !== "CSfilingNumber" &&
+    caseStatusSearchType !== "CSFilingNumber"
+  ) {
     return res.status(400).json({
       error:
-        "Invalid filing number. It must contain only digits and max length 7.",
+        "Invalid caseStatusSearchType. Filing number search requires CSfilingNumber.",
     });
   }
 
-  if (!/^\d{4}$/.test(filingYearNormalized)) {
+  const caseNoNormalized = String(case_no).trim();
+  const regYearNormalized = String(rgyear).trim();
+
+  if (!/^\d{1,7}$/.test(caseNoNormalized)) {
     return res.status(400).json({
-      error: "Invalid filing year. It must be exactly 4 digits.",
+      error:
+        "Invalid case number. It must contain only digits and max length 7.",
+    });
+  }
+
+  if (!/^\d{4}$/.test(regYearNormalized)) {
+    return res.status(400).json({
+      error: "Invalid registration year. It must be exactly 4 digits.",
     });
   }
 
   try {
     const result = await fetchFilingNumberSearch({
-      court_code,
+      court_code: courtCodeNormalized,
       state_code,
-      court_complex_code,
+      court_complex_code: courtComplexCodeNormalized,
+      caseStatusSearchType: "CSfilingNumber",
       captcha,
-      filing_no: filingNoNormalized,
-      filyear: filingYearNormalized,
-      filing_case_type,
+      case_no: caseNoNormalized,
+      rgyear: regYearNormalized,
+      case_type,
       frontendCookiesObject,
     });
 
@@ -85,17 +106,6 @@ async function getFilingNumberSearch(req, res) {
         error: error.message,
         code: error.code,
       });
-    }
-
-    if (error.response) {
-      console.error(
-        `[${errorTimestamp}] Error Response Status: ${error.response.status}`,
-      );
-      console.error(
-        `[${errorTimestamp}] Error Response Data Preview: ${String(
-          error.response.data,
-        ).substring(0, 500)}...`,
-      );
     }
 
     res.status(500).json({

@@ -12,10 +12,11 @@ async function fetchFilingNumberSearch({
   court_code,
   state_code,
   court_complex_code,
+  caseStatusSearchType = "CSfilingNumber",
   captcha,
-  filing_no,
-  filyear,
-  filing_case_type = "",
+  case_no,
+  rgyear,
+  case_type = "",
   frontendCookiesObject,
 }) {
   const targetUrl =
@@ -31,32 +32,22 @@ async function fetchFilingNumberSearch({
     court_code,
     state_code,
     court_complex_code,
-    caseStatusSearchType: "CSFilingNumber",
+    caseStatusSearchType,
     captcha,
-    filing_no,
-    filyear,
-    filing_case_type,
+    case_type,
+    case_no,
+    rgyear,
   });
 
   const headers = {
     accept: "application/json, text/javascript, */*; q=0.01",
-    "accept-language": "en-US,en;q=0.5",
     "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
     Cookie: cookieHeaderStringForExternalRequest,
     origin: "https://hcservices.ecourts.gov.in",
-    priority: "u=1, i",
     referer: "https://hcservices.ecourts.gov.in/",
-    "sec-ch-ua": '"Brave";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"Windows"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
-    "sec-gpc": "1",
     "user-agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "x-requested-with": "XMLHttpRequest",
-    "Content-Length": Buffer.byteLength(payload).toString(),
   };
 
   const response = await axios.post(targetUrl, payload, {
@@ -68,8 +59,14 @@ async function fetchFilingNumberSearch({
 
   const newSetCookieHeaders = response.headers["set-cookie"];
   const updatedCookiesForFrontend = parseSetCookieHeaders(newSetCookieHeaders);
+  const mergedCookiesForFrontend = {
+    ...(frontendCookiesObject || {}),
+    ...(updatedCookiesForFrontend || {}),
+  };
+
   const finalSessionId =
     getSessionIdFromCookies(updatedCookiesForFrontend) ||
+    getSessionIdFromCookies(frontendCookiesObject) ||
     frontendCookiesObject?.JSESSIONID ||
     frontendCookiesObject?.JSESSION ||
     frontendCookiesObject?.HCSERVICES_SESSID ||
@@ -80,9 +77,8 @@ async function fetchFilingNumberSearch({
     data: {
       con: govData.con,
     },
-    cookies: updatedCookiesForFrontend,
+    cookies: mergedCookiesForFrontend,
     raw: response.data,
-    response,
   };
 }
 
