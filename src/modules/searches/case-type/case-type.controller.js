@@ -7,16 +7,28 @@ async function getCaseTypeSearch(req, res) {
 
   const {
     captcha,
-    caseStatusSearchType,
-    court_code,
+    caseStatusSearchType: rawCaseStatusSearchType = "CScaseType",
+    court_code: rawCourtCode,
     state_code,
-    court_complex_code,
+    court_complex_code: rawCourtComplexCode,
     cookies: frontendCookiesObject,
     sessionId: frontendSessionId,
     case_type,
     search_year,
     f,
   } = req.body;
+
+  const courtCodeNormalized = String(rawCourtCode || "").trim();
+  const caseStatusSearchType =
+    String(rawCaseStatusSearchType || "").trim() || "CScaseType";
+  const derivedCourtComplexCode = courtCodeNormalized.includes("@")
+    ? courtCodeNormalized.split("@")[0].trim()
+    : "";
+  const courtComplexCodeNormalized =
+    String(rawCourtComplexCode || "").trim() || derivedCourtComplexCode;
+  const caseTypeNormalized = String(case_type || "").trim();
+  const searchYearNormalized = String(search_year || "").trim();
+  const statusFilterNormalized = String(f || "").trim();
 
   const cookieHeaderStringForExternalRequest = Object.entries(
     frontendCookiesObject || {},
@@ -27,14 +39,13 @@ async function getCaseTypeSearch(req, res) {
   const missingFields = [];
   if (!captcha) missingFields.push("captcha");
   if (!caseStatusSearchType) missingFields.push("caseStatusSearchType");
-  if (!f) missingFields.push("f");
-  if (!court_code) missingFields.push("court_code");
+  if (!statusFilterNormalized) missingFields.push("f");
+  if (!courtCodeNormalized) missingFields.push("court_code");
   if (!state_code) missingFields.push("state_code");
-  if (!court_complex_code) missingFields.push("court_complex_code");
-  if (!case_type) missingFields.push("case_type");
-  if (!search_year) missingFields.push("search_year");
-  if (!cookieHeaderStringForExternalRequest)
-    missingFields.push("cookiesString");
+  if (!courtComplexCodeNormalized) missingFields.push("court_complex_code");
+  if (!caseTypeNormalized) missingFields.push("case_type");
+  if (!searchYearNormalized) missingFields.push("search_year");
+  if (!cookieHeaderStringForExternalRequest) missingFields.push("cookies");
 
   if (missingFields.length > 0) {
     return res
@@ -42,18 +53,40 @@ async function getCaseTypeSearch(req, res) {
       .json({ error: `Missing required fields: ${missingFields.join(", ")}` });
   }
 
+  if (caseStatusSearchType !== "CScaseType") {
+    return res.status(400).json({
+      error:
+        "Invalid caseStatusSearchType. Case type search requires CScaseType.",
+    });
+  }
+
+  if (!/^\d{4}$/.test(searchYearNormalized)) {
+    return res.status(400).json({
+      error: "Invalid search year. It must be exactly 4 digits.",
+    });
+  }
+
+  if (
+    statusFilterNormalized !== "Pending" &&
+    statusFilterNormalized !== "Disposed"
+  ) {
+    return res.status(400).json({
+      error: "Invalid f value. It must be Pending or Disposed.",
+    });
+  }
+
   try {
     const result = await fetchCaseTypeSearch({
       captcha,
       caseStatusSearchType,
-      court_code,
+      court_code: courtCodeNormalized,
       state_code,
-      court_complex_code,
+      court_complex_code: courtComplexCodeNormalized,
       frontendCookiesObject,
       frontendSessionId,
-      case_type,
-      search_year,
-      f,
+      case_type: caseTypeNormalized,
+      search_year: searchYearNormalized,
+      f: statusFilterNormalized,
     });
 
     res.json(result);
