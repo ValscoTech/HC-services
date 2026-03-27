@@ -7,21 +7,66 @@ async function getAdvocateNameSearch(req, res) {
 
   const {
     captcha,
-    caseStatusSearchType,
-    court_code,
+    caseStatusSearchType: rawCaseStatusSearchType = "CSAdvName",
+    court_code: rawCourtCode,
     state_code,
-    court_complex_code,
+    court_complex_code: rawCourtComplexCode,
     cookies: frontendCookiesObject,
     sessionId: frontendSessionId,
-    // search_type=1: by name
     advocate_name,
-    // search_type=2: by bar code
     adv_bar_state,
-    // search_type=3: by today's case list
     caselist_date_dmy,
-    search_type,
+    caselist_date,
+    search_type: rawSearchType,
     f,
   } = req.body;
+
+  const courtCodeNormalized = String(rawCourtCode || "").trim();
+  const derivedCourtComplexCode = courtCodeNormalized.includes("@")
+    ? courtCodeNormalized.split("@")[0].trim()
+    : "";
+  const courtComplexCodeNormalized =
+    String(rawCourtComplexCode || "").trim() || derivedCourtComplexCode;
+
+  const allowedCaseStatusSearchTypes = new Set([
+    "CSAdvName",
+    "CSAdvNamebar",
+    "CSAdvNameyear",
+  ]);
+  const caseStatusSearchTypeInput = String(
+    rawCaseStatusSearchType || "",
+  ).trim();
+  const caseStatusSearchType = allowedCaseStatusSearchTypes.has(
+    caseStatusSearchTypeInput,
+  )
+    ? "CSAdvName"
+    : caseStatusSearchTypeInput;
+
+  const advocateNameNormalized = String(advocate_name || "").trim();
+  const advBarStateNormalized = String(adv_bar_state || "").trim();
+  const caselistDateNormalized = String(
+    caselist_date_dmy || caselist_date || "",
+  ).trim();
+
+  let searchTypeNormalized = String(rawSearchType || "").trim();
+  if (!searchTypeNormalized) {
+    if (caseStatusSearchTypeInput === "CSAdvNamebar") {
+      searchTypeNormalized = "2";
+    } else if (caseStatusSearchTypeInput === "CSAdvNameyear") {
+      searchTypeNormalized = "3";
+    } else if (advocateNameNormalized) {
+      searchTypeNormalized = "1";
+    } else if (caselistDateNormalized) {
+      searchTypeNormalized = "3";
+    } else if (advBarStateNormalized) {
+      searchTypeNormalized = "2";
+    }
+  }
+
+  let statusFilterNormalized = String(f || "").trim();
+  if (!statusFilterNormalized && searchTypeNormalized === "3") {
+    statusFilterNormalized = "date_case_list";
+  }
 
   const cookieHeaderStringForExternalRequest = Object.entries(
     frontendCookiesObject || {},
@@ -32,19 +77,18 @@ async function getAdvocateNameSearch(req, res) {
   const missingFields = [];
   if (!captcha) missingFields.push("captcha");
   if (!caseStatusSearchType) missingFields.push("caseStatusSearchType");
-  if (!search_type) missingFields.push("search_type");
-  if (!f) missingFields.push("f");
-  if (!court_code) missingFields.push("court_code");
+  if (!searchTypeNormalized) missingFields.push("search_type");
+  if (!statusFilterNormalized) missingFields.push("f");
+  if (!courtCodeNormalized) missingFields.push("court_code");
   if (!state_code) missingFields.push("state_code");
-  if (!court_complex_code) missingFields.push("court_complex_code");
-  if (!cookieHeaderStringForExternalRequest)
-    missingFields.push("cookiesString");
+  if (!courtComplexCodeNormalized) missingFields.push("court_complex_code");
+  if (!cookieHeaderStringForExternalRequest) missingFields.push("cookies");
 
-  if (search_type === "1" && !advocate_name)
+  if (searchTypeNormalized === "1" && !advocateNameNormalized)
     missingFields.push("advocate_name");
-  if (search_type === "2" && !adv_bar_state)
+  if (searchTypeNormalized === "2" && !advBarStateNormalized)
     missingFields.push("adv_bar_state");
-  if (search_type === "3" && !caselist_date_dmy)
+  if (searchTypeNormalized === "3" && !caselistDateNormalized)
     missingFields.push("caselist_date_dmy");
 
   if (missingFields.length > 0) {
@@ -53,20 +97,52 @@ async function getAdvocateNameSearch(req, res) {
       .json({ error: `Missing required fields: ${missingFields.join(", ")}` });
   }
 
+  if (caseStatusSearchType !== "CSAdvName") {
+    return res.status(400).json({
+      error:
+        "Invalid caseStatusSearchType. Advocate search requires CSAdvName, CSAdvNamebar, or CSAdvNameyear.",
+    });
+  }
+
+  if (
+    searchTypeNormalized !== "1" &&
+    searchTypeNormalized !== "2" &&
+    searchTypeNormalized !== "3"
+  ) {
+    return res.status(400).json({
+      error: "Invalid search_type. It must be 1, 2, or 3.",
+    });
+  }
+
+  if (
+    (searchTypeNormalized === "1" || searchTypeNormalized === "2") &&
+    !["Pending", "Disposed", "Both"].includes(statusFilterNormalized)
+  ) {
+    return res.status(400).json({
+      error: "Invalid f value. For advocate search it must be Pending, Disposed, or Both.",
+    });
+  }
+
+  if (searchTypeNormalized === "3" && statusFilterNormalized !== "date_case_list") {
+    return res.status(400).json({
+      error: "Invalid f value. Date case list search requires date_case_list.",
+    });
+  }
+
   try {
     const result = await fetchAdvocateNameSearch({
       captcha,
       caseStatusSearchType,
-      court_code,
+      court_code: courtCodeNormalized,
       state_code,
-      court_complex_code,
+      court_complex_code: courtComplexCodeNormalized,
       frontendCookiesObject,
       frontendSessionId,
-      advocate_name,
-      adv_bar_state,
-      caselist_date_dmy,
-      search_type,
-      f,
+      advocate_name: advocateNameNormalized,
+      adv_bar_state: advBarStateNormalized,
+      caselist_date_dmy: caselistDateNormalized,
+      search_type: searchTypeNormalized,
+      f: statusFilterNormalized,
     });
 
     res.json(result);

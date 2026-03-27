@@ -85,17 +85,26 @@ async function fetchAdvocateNameSearch({
 
   const newSetCookieHeaders = response.headers["set-cookie"];
   const updatedCookiesForFrontend = parseSetCookieHeaders(newSetCookieHeaders);
+  const mergedCookiesForFrontend = {
+    ...(frontendCookiesObject || {}),
+    ...(updatedCookiesForFrontend || {}),
+  };
   const finalSessionId =
-    getSessionIdFromCookies(updatedCookiesForFrontend) || frontendSessionId;
+    getSessionIdFromCookies(updatedCookiesForFrontend) ||
+    getSessionIdFromCookies(frontendCookiesObject) ||
+    frontendSessionId ||
+    frontendCookiesObject?.JSESSIONID ||
+    frontendCookiesObject?.JSESSION ||
+    frontendCookiesObject?.HCSERVICES_SESSID ||
+    null;
 
   return {
     sessionID: finalSessionId,
     data: {
       con: govData.con,
     },
-    cookies: updatedCookiesForFrontend,
+    cookies: mergedCookiesForFrontend,
     raw: response.data,
-    response,
   };
 }
 
